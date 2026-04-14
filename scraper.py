@@ -150,7 +150,7 @@ def main():
 
     run_id = datetime.now().strftime("%Y%m%d%H%M")
 
-    items = scrape_saks()
+    items = scrape_nordstrom_rack()
 
     for item in items:
 
