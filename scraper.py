@@ -82,6 +82,9 @@ def scrape_nordstrom_rack():
 
                 soup = BeautifulSoup(response.text, "html.parser")
 
+                print("HTML length:", len(response.text))
+                print(response.text[:500])
+
                 script = soup.find("script", {"id": "__NEXT_DATA__"})
 
                 if not script:
