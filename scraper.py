@@ -52,7 +52,7 @@ def cleanup_old_rows(sheet):
         sheet.delete_rows(row)
 
 
-def scrape_saks():
+def scrape_nordstrom_rack():
 
     items = []
 
@@ -61,33 +61,34 @@ def scrape_saks():
     }
 
     urls = [
-        "https://www.saksfifthavenue.com/c/women-s-apparel",
-        "https://www.saksfifthavenue.com/c/women-shoes",
-        "https://www.saksfifthavenue.com/c/handbags"
+        "https://www.nordstromrack.com/c/women/clothing",
+        "https://www.nordstromrack.com/c/women/shoes",
+        "https://www.nordstromrack.com/c/women/handbags"
     ]
 
     for base_url in urls:
 
-        for start in range(0, 600, 24):
+        for page in range(1, 20):
 
-            url = f"{base_url}?srule=sale-first&start={start}&sz=24"
+            url = f"{base_url}?page={page}"
 
             print("Trying:", url)
 
             try:
+
                 response = requests.get(url, headers=headers)
 
                 print("Status:", response.status_code)
 
                 soup = BeautifulSoup(response.text, "html.parser")
 
-                products = soup.select(".product-tile")
+                products = soup.select('[data-testid="product-card"]')
 
                 for product in products:
 
                     try:
 
-                        brand = product.select_one(".product-brand")
+                        brand = product.select_one('[data-testid="product-brand"]')
 
                         if not brand:
                             continue
@@ -97,15 +98,22 @@ def scrape_saks():
                         if not any(d.lower() in brand.lower() for d in DESIGNERS):
                             continue
 
-                        name = product.select_one(".product-name").text.strip()
+                        name = product.select_one('[data-testid="product-title"]').text.strip()
 
-                        price = product.select_one(".sale-price")
-                        original = product.select_one(".original-price")
+                        price = product.select_one('[data-testid="product-price"]')
 
-                        if not price or not original:
+                        if not price:
                             continue
 
-                        price = float(price.text.replace("$","").replace(",",""))
+                        price_text = price.text.replace("$","").replace(",","")
+                        price = float(price_text)
+
+                        # try find compare price
+                        original = product.select_one('[data-testid="product-compare-at-price"]')
+
+                        if not original:
+                            continue
+
                         original = float(original.text.replace("$","").replace(",",""))
 
                         discount = (original - price) / original
@@ -123,17 +131,17 @@ def scrape_saks():
                             "original": original,
                             "discount": f"{round(discount*100)}%",
                             "image": image,
-                            "link": "https://www.saksfifthavenue.com" + link
+                            "link": "https://www.nordstromrack.com" + link
                         })
 
-                    except:
+                    except Exception as e:
+                        print("Inner error:", e)
                         continue
 
             except Exception as e:
-                print("Error:", e)
+                print("Outer error:", e)
 
     return items
-
 
 def main():
 
