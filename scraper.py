@@ -89,6 +89,10 @@ def scrape_nordstrom_rack():
 
                 data = json.loads(script.string)
 
+                print("Top Keys:", data.keys())
+                print("Props Keys:", data["props"].keys())
+                print("PageProps Keys:", data["props"]["pageProps"].keys())
+
                 products = data["props"]["pageProps"]["products"]
 
                 for product in products:
