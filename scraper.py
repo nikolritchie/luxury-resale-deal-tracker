@@ -55,66 +55,71 @@ def cleanup_old_rows(sheet):
 def scrape_saks():
 
     urls = [
-    "https://www.saksfifthavenue.com/c/women-s-apparel/dresses",
-    "https://www.saksfifthavenue.com/c/women-s-apparel/tops",
-    "https://www.saksfifthavenue.com/c/women-s-apparel/sweaters",
-    "https://www.saksfifthavenue.com/c/women-s-apparel/jackets-coats",
-    "https://www.saksfifthavenue.com/c/women-s-apparel/skirts",
-    "https://www.saksfifthavenue.com/c/women-s-apparel/pants",
-    "https://www.saksfifthavenue.com/c/women-shoes",
-    "https://www.saksfifthavenue.com/c/handbags"
-]
+        "https://www.saksfifthavenue.com/c/women-s-apparel/dresses",
+        "https://www.saksfifthavenue.com/c/women-s-apparel/tops",
+        "https://www.saksfifthavenue.com/c/women-s-apparel/sweaters",
+        "https://www.saksfifthavenue.com/c/women-s-apparel/jackets-coats",
+        "https://www.saksfifthavenue.com/c/women-s-apparel/skirts",
+        "https://www.saksfifthavenue.com/c/women-s-apparel/pants",
+        "https://www.saksfifthavenue.com/c/women-shoes",
+        "https://www.saksfifthavenue.com/c/handbags"
+    ]
 
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
-    for url in urls:
-
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.text, "html.parser")
-
     items = []
 
-    products = soup.select(".product-tile")
+    for base_url in urls:
 
-    for product in products:
+        # Scan first 10 pages
+        for start in range(0, 240, 24):
 
-        try:
-            brand = product.select_one(".product-brand").text.strip()
+            url = f"{base_url}?start={start}&sz=24"
 
-            if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                continue
+            response = requests.get(url, headers=headers)
+            soup = BeautifulSoup(response.text, "html.parser")
 
-            name = product.select_one(".product-name").text.strip()
+            products = soup.select(".product-tile")
 
-            price = product.select_one(".sale-price").text.replace("$","").strip()
-            original = product.select_one(".original-price").text.replace("$","").strip()
+            for product in products:
 
-            price = float(price)
-            original = float(original)
+                try:
+                    brand = product.select_one(".product-brand").text.strip()
 
-            discount = (original - price) / original
+                    if not any(d.lower() in brand.lower() for d in DESIGNERS):
+                        continue
 
-            if discount < 0.70:
-                continue
+                    name = product.select_one(".product-name").text.strip()
 
-            image = product.select_one("img").get("src")
+                    price = product.select_one(".sale-price").text.replace("$","").replace(",","").strip()
+                    original = product.select_one(".original-price").text.replace("$","").replace(",","").strip()
 
-            link = product.select_one("a").get("href")
+                    price = float(price)
+                    original = float(original)
 
-            items.append({
-                "brand": brand,
-                "name": name,
-                "price": price,
-                "original": original,
-                "discount": f"{round(discount*100)}%",
-                "image": image,
-                "link": "https://www.saksfifthavenue.com" + link
-            })
+                    discount = (original - price) / original
 
-        except:
-            continue
+                    if discount < 0.70:
+                        continue
+
+                    image = product.select_one("img").get("src")
+
+                    link = product.select_one("a").get("href")
+
+                    items.append({
+                        "brand": brand,
+                        "name": name,
+                        "price": price,
+                        "original": original,
+                        "discount": f"{round(discount*100)}%",
+                        "image": image,
+                        "link": "https://www.saksfifthavenue.com" + link
+                    })
+
+                except:
+                    continue
 
     return items
 
