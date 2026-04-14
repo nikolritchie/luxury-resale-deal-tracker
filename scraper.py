@@ -9,7 +9,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 DESIGNERS = [
     "Zimmermann",
     "Staud",
-    "Self-Portrait",`
+    "Self-Portrait",
     "Ulla Johnson",
     "Farm Rio",
     "Ganni",
@@ -73,10 +73,10 @@ def scrape_saks():
 
     for base_url in urls:
 
-        # Scan first 10 pages
-        for start in range(0, 240, 24):
+        # Scan first 50ish pages
+        for start in range(0, 1200, 24):
 
-            url = f"{base_url}?start={start}&sz=24"
+            url = f"{base_url}?srule=sale-first&start={start}&sz=24"
 
             response = requests.get(url, headers=headers)
             soup = BeautifulSoup(response.text, "html.parser")
