@@ -60,83 +60,59 @@ def scrape_nordstrom_rack():
         "User-Agent": "Mozilla/5.0"
     }
 
-    urls = [
-        "https://www.nordstromrack.com/c/women/clothing",
-        "https://www.nordstromrack.com/c/women/shoes",
-        "https://www.nordstromrack.com/c/women/handbags"
-    ]
+    for page in range(1, 20):
 
-    for base_url in urls:
+        url = f"https://www.nordstromrack.com/api/search/products?page={page}&query=women"
 
-        for page in range(1, 15):
+        print("Trying:", url)
 
-            url = f"{base_url}?page={page}"
+        try:
 
-            print("Trying:", url)
+            response = requests.get(url, headers=headers)
 
-            try:
+            print("Status:", response.status_code)
 
-                response = requests.get(url, headers=headers)
+            data = response.json()
 
-                print("Status:", response.status_code)
+            for product in data.get("products", []):
 
-                soup = BeautifulSoup(response.text, "html.parser")
+                try:
 
-                print("HTML length:", len(response.text))
-                print(response.text[:500])
+                    brand = product.get("brand", "")
 
-                script = soup.find("script", {"id": "__NEXT_DATA__"})
+                    if not any(d.lower() in brand.lower() for d in DESIGNERS):
+                        continue
 
-                if not script:
-                    continue
+                    price = product.get("price", {}).get("sale", 0)
+                    original = product.get("price", {}).get("regular", 0)
 
-                data = json.loads(script.string)
+                    if not price or not original:
+                        continue
 
-                print("Top Keys:", data.keys())
-                print("Props Keys:", data["props"].keys())
-                print("PageProps Keys:", data["props"]["pageProps"].keys())
+                    discount = (original - price) / original
 
-                products = data["props"]["pageProps"]["products"]
+                    if discount < 0.70:
+                        continue
 
-                for product in products:
+                    name = product.get("name", "")
+                    image = product.get("imageUrl", "")
+                    link = "https://www.nordstromrack.com" + product.get("url", "")
 
-                    try:
+                    items.append({
+                        "brand": brand,
+                        "name": name,
+                        "price": price,
+                        "original": original,
+                        "discount": f"{round(discount*100)}%",
+                        "image": image,
+                        "link": link
+                    })
 
-                        brand = product.get("brandName", "")
+                except Exception as e:
+                    print("Inner error:", e)
 
-                        if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                            continue
-
-                        price = product.get("price", {}).get("salePrice", 0)
-                        original = product.get("price", {}).get("regularPrice", 0)
-
-                        if not price or not original:
-                            continue
-
-                        discount = (original - price) / original
-
-                        if discount < 0.70:
-                            continue
-
-                        name = product.get("productName", "")
-                        image = product.get("imageUrl", "")
-                        link = "https://www.nordstromrack.com" + product.get("productUrl", "")
-
-                        items.append({
-                            "brand": brand,
-                            "name": name,
-                            "price": price,
-                            "original": original,
-                            "discount": f"{round(discount*100)}%",
-                            "image": image,
-                            "link": link
-                        })
-
-                    except Exception as e:
-                        print("Inner error:", e)
-
-            except Exception as e:
-                print("Outer error:", e)
+        except Exception as e:
+            print("Outer error:", e)
 
     return items
 
