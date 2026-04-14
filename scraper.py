@@ -57,7 +57,7 @@ def scrape_nordstrom_rack():
     items = []
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        "User-Agent": "Mozilla/5.0"
     }
 
     urls = [
@@ -68,7 +68,7 @@ def scrape_nordstrom_rack():
 
     for base_url in urls:
 
-        for page in range(1, 20):
+        for page in range(1, 15):
 
             url = f"{base_url}?page={page}"
 
@@ -82,47 +82,38 @@ def scrape_nordstrom_rack():
 
                 soup = BeautifulSoup(response.text, "html.parser")
 
-                products = soup.select('[data-testid="product-card"]')
+                script = soup.find("script", {"id": "__NEXT_DATA__"})
+
+                if not script:
+                    continue
+
+                data = json.loads(script.string)
+
+                products = data["props"]["pageProps"]["products"]
 
                 for product in products:
 
                     try:
 
-                        brand = product.select_one('[data-testid="product-brand"]')
-
-                        if not brand:
-                            continue
-
-                        brand = brand.text.strip()
+                        brand = product.get("brandName", "")
 
                         if not any(d.lower() in brand.lower() for d in DESIGNERS):
                             continue
 
-                        name = product.select_one('[data-testid="product-title"]').text.strip()
+                        price = product.get("price", {}).get("salePrice", 0)
+                        original = product.get("price", {}).get("regularPrice", 0)
 
-                        price = product.select_one('[data-testid="product-price"]')
-
-                        if not price:
+                        if not price or not original:
                             continue
-
-                        price_text = price.text.replace("$","").replace(",","")
-                        price = float(price_text)
-
-                        # try find compare price
-                        original = product.select_one('[data-testid="product-compare-at-price"]')
-
-                        if not original:
-                            continue
-
-                        original = float(original.text.replace("$","").replace(",",""))
 
                         discount = (original - price) / original
 
                         if discount < 0.70:
                             continue
 
-                        image = product.select_one("img")["src"]
-                        link = product.select_one("a")["href"]
+                        name = product.get("productName", "")
+                        image = product.get("imageUrl", "")
+                        link = "https://www.nordstromrack.com" + product.get("productUrl", "")
 
                         items.append({
                             "brand": brand,
@@ -131,12 +122,11 @@ def scrape_nordstrom_rack():
                             "original": original,
                             "discount": f"{round(discount*100)}%",
                             "image": image,
-                            "link": "https://www.nordstromrack.com" + link
+                            "link": link
                         })
 
                     except Exception as e:
                         print("Inner error:", e)
-                        continue
 
             except Exception as e:
                 print("Outer error:", e)
