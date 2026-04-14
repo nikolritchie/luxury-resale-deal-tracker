@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from playwright.sync_api import sync_playwright
 
 DESIGNERS = [
     "Zimmermann",
@@ -56,63 +57,87 @@ def scrape_nordstrom_rack():
 
     items = []
 
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    with sync_playwright() as p:
 
-    for page in range(1, 20):
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-        url = f"https://www.nordstromrack.com/api/search/products?page={page}&query=women"
+        urls = [
+            "https://www.nordstromrack.com/c/women/clothing",
+            "https://www.nordstromrack.com/c/women/shoes",
+            "https://www.nordstromrack.com/c/women/handbags"
+        ]
 
-        print("Trying:", url)
+        for base_url in urls:
 
-        try:
+            for page_num in range(1, 10):
 
-            response = requests.get(url, headers=headers)
+                url = f"{base_url}?page={page_num}"
 
-            print("Status:", response.status_code)
-
-            data = response.json()
-
-            for product in data.get("products", []):
+                print("Visiting:", url)
 
                 try:
+                    page.goto(url, timeout=60000)
+                    page.wait_for_timeout(3000)
 
-                    brand = product.get("brand", "")
+                    html = page.content()
 
-                    if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                        continue
+                    soup = BeautifulSoup(html, "html.parser")
 
-                    price = product.get("price", {}).get("sale", 0)
-                    original = product.get("price", {}).get("regular", 0)
+                    products = soup.select('[data-testid="product-card"]')
 
-                    if not price or not original:
-                        continue
+                    print("Products found:", len(products))
 
-                    discount = (original - price) / original
+                    for product in products:
 
-                    if discount < 0.70:
-                        continue
+                        try:
 
-                    name = product.get("name", "")
-                    image = product.get("imageUrl", "")
-                    link = "https://www.nordstromrack.com" + product.get("url", "")
+                            brand = product.select_one('[data-testid="product-brand"]')
 
-                    items.append({
-                        "brand": brand,
-                        "name": name,
-                        "price": price,
-                        "original": original,
-                        "discount": f"{round(discount*100)}%",
-                        "image": image,
-                        "link": link
-                    })
+                            if not brand:
+                                continue
+
+                            brand = brand.text.strip()
+
+                            if not any(d.lower() in brand.lower() for d in DESIGNERS):
+                                continue
+
+                            name = product.select_one('[data-testid="product-title"]').text.strip()
+
+                            price = product.select_one('[data-testid="product-price"]')
+                            compare = product.select_one('[data-testid="product-compare-at-price"]')
+
+                            if not price or not compare:
+                                continue
+
+                            price = float(price.text.replace("$","").replace(",",""))
+                            original = float(compare.text.replace("$","").replace(",",""))
+
+                            discount = (original - price) / original
+
+                            if discount < 0.70:
+                                continue
+
+                            image = product.select_one("img")["src"]
+                            link = product.select_one("a")["href"]
+
+                            items.append({
+                                "brand": brand,
+                                "name": name,
+                                "price": price,
+                                "original": original,
+                                "discount": f"{round(discount*100)}%",
+                                "image": image,
+                                "link": "https://www.nordstromrack.com" + link
+                            })
+
+                        except Exception as e:
+                            print("Item error:", e)
 
                 except Exception as e:
-                    print("Inner error:", e)
+                    print("Page error:", e)
 
-        except Exception as e:
-            print("Outer error:", e)
+        browser.close()
 
     return items
 
