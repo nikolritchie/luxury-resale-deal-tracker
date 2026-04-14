@@ -54,75 +54,56 @@ def cleanup_old_rows(sheet):
 
 def scrape_saks():
 
-    urls = [
-        "https://www.saksfifthavenue.com/c/women-s-apparel/dresses",
-        "https://www.saksfifthavenue.com/c/women-s-apparel/tops",
-        "https://www.saksfifthavenue.com/c/women-s-apparel/sweaters",
-        "https://www.saksfifthavenue.com/c/women-s-apparel/jackets-coats",
-        "https://www.saksfifthavenue.com/c/women-s-apparel/skirts",
-        "https://www.saksfifthavenue.com/c/women-s-apparel/pants",
-        "https://www.saksfifthavenue.com/c/women-shoes",
-        "https://www.saksfifthavenue.com/c/handbags"
-    ]
+    items = []
 
     headers = {
         "User-Agent": "Mozilla/5.0"
     }
 
-    items = []
+    for start in range(0, 1000, 24):
 
-    for base_url in urls:
+        url = f"https://www.saksfifthavenue.com/api/product/search?start={start}&sz=24"
 
-        # Scan first 50ish pages
-        for start in range(0, 1200, 24):
-
-            url = f"{base_url}?srule=sale-first&start={start}&sz=24"
-
+        try:
             response = requests.get(url, headers=headers)
-            soup = BeautifulSoup(response.text, "html.parser")
+            data = response.json()
 
-            products = soup.select(".product-tile")
+            for product in data.get("products", []):
 
-            for product in products:
+                brand = product.get("brand", "")
 
-                try:
-                    brand = product.select_one(".product-brand").text.strip()
-
-                    if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                        continue
-
-                    name = product.select_one(".product-name").text.strip()
-
-                    price = product.select_one(".sale-price").text.replace("$","").replace(",","").strip()
-                    original = product.select_one(".original-price").text.replace("$","").replace(",","").strip()
-
-                    price = float(price)
-                    original = float(original)
-
-                    discount = (original - price) / original
-
-                    if discount < 0.70:
-                        continue
-
-                    image = product.select_one("img").get("src")
-
-                    link = product.select_one("a").get("href")
-
-                    items.append({
-                        "brand": brand,
-                        "name": name,
-                        "price": price,
-                        "original": original,
-                        "discount": f"{round(discount*100)}%",
-                        "image": image,
-                        "link": "https://www.saksfifthavenue.com" + link
-                    })
-
-                except:
+                if not any(d.lower() in brand.lower() for d in DESIGNERS):
                     continue
 
-    return items
+                original = product.get("originalPrice", 0)
+                sale = product.get("salePrice", 0)
 
+                if not original or not sale:
+                    continue
+
+                discount = (original - sale) / original
+
+                if discount < 0.70:
+                    continue
+
+                image = product.get("image", "")
+                name = product.get("name", "")
+                link = "https://www.saksfifthavenue.com" + product.get("url", "")
+
+                items.append({
+                    "brand": brand,
+                    "name": name,
+                    "price": sale,
+                    "original": original,
+                    "discount": f"{round(discount*100)}%",
+                    "image": image,
+                    "link": link
+                })
+
+        except:
+            continue
+
+    return items
 
 def main():
 
