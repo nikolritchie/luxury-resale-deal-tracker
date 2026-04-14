@@ -57,61 +57,80 @@ def scrape_saks():
     items = []
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Connection": "keep-alive",
-        "Referer": "https://www.saksfifthavenue.com/",
-        "Origin": "https://www.saksfifthavenue.com"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
     }
 
-    for start in range(0, 1000, 24):
+    urls = [
+        "https://www.saksfifthavenue.com/c/women-s-apparel",
+        "https://www.saksfifthavenue.com/c/women-shoes",
+        "https://www.saksfifthavenue.com/c/handbags"
+    ]
 
-        url = f"https://www.saksfifthavenue.com/api/product/search?start={start}&sz=24"
+    for base_url in urls:
 
-        try:
-            response = requests.get(url, headers=headers)
+        for start in range(0, 600, 24):
 
-            print("Status:", response.status_code)
-            print("URL:", url)
+            url = f"{base_url}?srule=sale-first&start={start}&sz=24"
 
-            data = response.json()
+            print("Trying:", url)
 
-            for product in data.get("products", []):
+            try:
+                response = requests.get(url, headers=headers)
 
-                brand = product.get("brand", "")
+                print("Status:", response.status_code)
 
-                if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                    continue
+                soup = BeautifulSoup(response.text, "html.parser")
 
-                original = product.get("originalPrice", 0)
-                sale = product.get("salePrice", 0)
+                products = soup.select(".product-tile")
 
-                if not original or not sale:
-                    continue
+                for product in products:
 
-                discount = (original - sale) / original
+                    try:
 
-                if discount < 0.70:
-                    continue
+                        brand = product.select_one(".product-brand")
 
-                image = product.get("image", "")
-                name = product.get("name", "")
-                link = "https://www.saksfifthavenue.com" + product.get("url", "")
+                        if not brand:
+                            continue
 
-                items.append({
-                    "brand": brand,
-                    "name": name,
-                    "price": sale,
-                    "original": original,
-                    "discount": f"{round(discount*100)}%",
-                    "image": image,
-                    "link": link
-                })
+                        brand = brand.text.strip()
 
-        except Exception as e:
-            print("Error:", e)
-            continue
+                        if not any(d.lower() in brand.lower() for d in DESIGNERS):
+                            continue
+
+                        name = product.select_one(".product-name").text.strip()
+
+                        price = product.select_one(".sale-price")
+                        original = product.select_one(".original-price")
+
+                        if not price or not original:
+                            continue
+
+                        price = float(price.text.replace("$","").replace(",",""))
+                        original = float(original.text.replace("$","").replace(",",""))
+
+                        discount = (original - price) / original
+
+                        if discount < 0.70:
+                            continue
+
+                        image = product.select_one("img")["src"]
+                        link = product.select_one("a")["href"]
+
+                        items.append({
+                            "brand": brand,
+                            "name": name,
+                            "price": price,
+                            "original": original,
+                            "discount": f"{round(discount*100)}%",
+                            "image": image,
+                            "link": "https://www.saksfifthavenue.com" + link
+                        })
+
+                    except:
+                        continue
+
+            except Exception as e:
+                print("Error:", e)
 
     return items
 
