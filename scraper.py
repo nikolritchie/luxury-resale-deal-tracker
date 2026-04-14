@@ -66,6 +66,10 @@ def scrape_saks():
 
         try:
             response = requests.get(url, headers=headers)
+
+            print("Status:", response.status_code)
+            print("URL:", url)
+
             data = response.json()
 
             for product in data.get("products", []):
@@ -100,10 +104,12 @@ def scrape_saks():
                     "link": link
                 })
 
-        except:
+        except Exception as e:
+            print("Error:", e)
             continue
 
     return items
+
 
 def main():
 
