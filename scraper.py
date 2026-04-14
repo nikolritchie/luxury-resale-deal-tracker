@@ -77,8 +77,17 @@ def scrape_nordstrom_rack():
                 print("Visiting:", url)
 
                 try:
+
+                    # THIS LINE WAS MISSING
                     page.goto(url, timeout=60000)
+
+                    page.wait_for_timeout(4000)
+
+                    page.mouse.wheel(0, 5000)
+
                     page.wait_for_timeout(3000)
+
+                    page.wait_for_selector("img", timeout=10000)
 
                     html = page.content()
 
