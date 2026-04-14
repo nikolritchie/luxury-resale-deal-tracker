@@ -54,7 +54,16 @@ def cleanup_old_rows(sheet):
 
 def scrape_saks():
 
-    url = "https://www.saksfifthavenue.com/c/women-s-apparel/dresses"
+    urls = [
+    "https://www.saksfifthavenue.com/c/women-s-apparel/dresses",
+    "https://www.saksfifthavenue.com/c/women-s-apparel/tops",
+    "https://www.saksfifthavenue.com/c/women-s-apparel/sweaters",
+    "https://www.saksfifthavenue.com/c/women-s-apparel/jackets-coats",
+    "https://www.saksfifthavenue.com/c/women-s-apparel/skirts",
+    "https://www.saksfifthavenue.com/c/women-s-apparel/pants",
+    "https://www.saksfifthavenue.com/c/women-shoes",
+    "https://www.saksfifthavenue.com/c/handbags"
+]
 
     headers = {
         "User-Agent": "Mozilla/5.0"
