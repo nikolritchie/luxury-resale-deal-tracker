@@ -3,6 +3,7 @@ import json
 import re
 import statistics
 import requests
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
@@ -92,43 +93,31 @@ def extract_style_name(title, brand):
     return candidates[0] if candidates else ""
 
 # =====================
-# EBAY FUNCTIONS
+# EBAY RSS (WORKS!)
 # =====================
 
 def get_real_titles_from_ebay(brand):
 
-    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(brand + ' dress')}&LH_Sold=1&LH_Complete=1&_ipg=50"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0",
-        "Accept-Language": "en-US,en;q=0.9"
-    }
+    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(brand + ' dress')}&LH_Sold=1&LH_Complete=1&_rss=1"
 
     titles = []
 
     try:
-        r = requests.get(url, headers=headers, timeout=20)
+        r = requests.get(url, timeout=20)
 
-        print("Response length:", len(r.text))
+        root = ET.fromstring(r.content)
 
-        soup = BeautifulSoup(r.text, "html.parser")
+        for item in root.findall(".//item"):
 
-        # Look for links instead of title class
-        links = soup.select("a.s-item__link")
+            title = item.find("title").text
 
-        print("Links found:", len(links))
-
-        for link in links:
-
-            title = link.get_text(strip=True)
-
-            if not title or len(title) < 15:
+            if not title:
                 continue
 
             if brand.lower() not in title.lower():
                 continue
 
-            if "Shop on eBay" in title:
+            if len(title) < 15:
                 continue
 
             titles.append(title)
@@ -137,7 +126,7 @@ def get_real_titles_from_ebay(brand):
                 break
 
     except Exception as e:
-        print("Title fetch error:", e)
+        print("RSS error:", e)
 
     return titles
 
@@ -151,66 +140,48 @@ def get_ebay_sold_comps(brand, title):
     else:
         query = f"{brand} dress"
 
-    search_url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(query)}&LH_Sold=1&LH_Complete=1"
-
-    print("Searching eBay:", query)
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(query)}&LH_Sold=1&LH_Complete=1&_rss=1"
 
     prices = []
-    matches = 0
 
     try:
-        r = requests.get(search_url, headers=headers, timeout=20)
-        soup = BeautifulSoup(r.text, "html.parser")
+        r = requests.get(url, timeout=20)
+        root = ET.fromstring(r.content)
 
-        items = soup.select(".s-item")
+        for item in root.findall(".//item"):
 
-        for item in items[:30]:
+            title_el = item.find("title")
+            price_el = item.find("description")
 
-            try:
-                title_el = item.select_one(".s-item__title")
-                price_el = item.select_one(".s-item__price")
-
-                if not title_el or not price_el:
-                    continue
-
-                ebay_title = title_el.text.strip()
-                price_text = price_el.text
-
-                price_val = re.findall(r"\d+(?:\.\d+)?", price_text)
-                if not price_val:
-                    continue
-
-                price = float(price_val[0])
-
-                sim = similarity(title, ebay_title)
-
-                if sim < 0.4:
-                    continue
-
-                prices.append(price)
-                matches += 1
-
-            except:
+            if title_el is None or price_el is None:
                 continue
 
+            ebay_title = title_el.text
+            desc = price_el.text
+
+            # extract price
+            price_match = re.findall(r"\$\d+(?:\.\d+)?", desc)
+            if not price_match:
+                continue
+
+            price = float(price_match[0].replace("$", ""))
+
+            sim = similarity(title, ebay_title)
+
+            if sim < 0.4:
+                continue
+
+            prices.append(price)
+
     except Exception as e:
-        print("eBay error:", e)
+        print("Comp error:", e)
 
     if len(prices) >= 3:
         median_price = round(statistics.median(prices), 2)
 
-        if matches >= 8:
-            confidence = "High"
-        elif matches >= 4:
-            confidence = "Medium"
-        else:
-            confidence = "Low"
+        confidence = "High" if len(prices) >= 8 else "Medium"
 
-        return median_price, matches, confidence
+        return median_price, len(prices), confidence
 
     return None, 0, "Low"
 
@@ -231,7 +202,7 @@ def main():
 
         titles = get_real_titles_from_ebay(brand)
 
-        print(f"Found {len(titles)} real titles")
+        print(f"Found {len(titles)} titles")
 
         for title in titles:
 
@@ -249,7 +220,7 @@ def main():
                 comps,
                 confidence,
                 "",
-                f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(title)}&LH_Sold=1",
+                "",
                 run_id
             ]
 
