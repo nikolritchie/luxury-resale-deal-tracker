@@ -29,8 +29,8 @@ DESIGNERS = [
 # =====================
 
 def connect_sheet():
-    creds_json = os.environ['GOOGLE_SHEETS_CREDENTIALS']
-    creds_dict = json.loads(creds_json)
+    with open("credentials.json") as f:
+    creds_dict = json.load(f)
 
     scope = [
         "https://spreadsheets.google.com/feeds",
