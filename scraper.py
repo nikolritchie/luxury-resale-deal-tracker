@@ -1,10 +1,13 @@
 import os
 import json
+import re
+import statistics
+import requests
 from datetime import datetime, timedelta
+from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from playwright.sync_api import sync_playwright
 
 # =====================
 # CONFIG
@@ -61,119 +64,114 @@ def cleanup_old_rows(sheet):
 
 
 # =====================
-# SCRAPER (PLAYWRIGHT)
+# TEXT UTILS
 # =====================
 
-def scrape_nordstrom_rack():
+def normalize(text):
+    text = text.lower()
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
-    items = []
 
-    with sync_playwright() as p:
+def similarity(a, b):
+    a_words = set(normalize(a).split())
+    b_words = set(normalize(b).split())
 
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"]
-        )
+    if not a_words or not b_words:
+        return 0
 
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            viewport={"width": 1280, "height": 800}
-        )
+    return len(a_words & b_words) / len(a_words | b_words)
 
-        page = context.new_page()
 
-        urls = [
-            "https://www.nordstromrack.com/c/women/clothing",
-            "https://www.nordstromrack.com/c/women/shoes",
-            "https://www.nordstromrack.com/c/women/handbags"
-        ]
+def extract_style_name(title, brand):
+    title = title.replace(brand, "").strip()
+    words = re.findall(r"[A-Za-z]+", title)
 
-        for base_url in urls:
+    candidates = [w for w in words if len(w) >= 4]
 
-            for page_num in range(1, 10):
-
-                url = f"{base_url}?page={page_num}"
-                print("Visiting:", url)
-
-                try:
-                    page.goto(url, timeout=60000)
-
-                    # let JS load
-                    page.wait_for_timeout(5000)
-
-                    # scroll to trigger lazy loading
-                    page.mouse.wheel(0, 6000)
-
-                    page.wait_for_timeout(3000)
-
-                    html = page.content()
-                    soup = BeautifulSoup(html, "html.parser")
-
-                    products = soup.select('[data-testid="product-card"]')
-
-                    print("Products found:", len(products))
-
-                    for product in products:
-
-                        try:
-                            brand_el = product.select_one('[data-testid="product-brand"]')
-                            if not brand_el:
-                                continue
-
-                            brand = brand_el.text.strip()
-
-                            if not any(d.lower() in brand.lower() for d in DESIGNERS):
-                                continue
-
-                            name_el = product.select_one('[data-testid="product-title"]')
-                            price_el = product.select_one('[data-testid="product-price"]')
-                            compare_el = product.select_one('[data-testid="product-compare-at-price"]')
-
-                            if not name_el or not price_el or not compare_el:
-                                continue
-
-                            name = name_el.text.strip()
-
-                            price = float(price_el.text.replace("$", "").replace(",", ""))
-                            original = float(compare_el.text.replace("$", "").replace(",", ""))
-
-                            discount = (original - price) / original
-
-                            if discount < 0.70:
-                                continue
-
-                            image_el = product.select_one("img")
-                            link_el = product.select_one("a")
-
-                            if not image_el or not link_el:
-                                continue
-
-                            image = image_el.get("src", "")
-                            link = "https://www.nordstromrack.com" + link_el.get("href", "")
-
-                            items.append({
-                                "brand": brand,
-                                "name": name,
-                                "price": price,
-                                "original": original,
-                                "discount": f"{round(discount * 100)}%",
-                                "image": image,
-                                "link": link
-                            })
-
-                        except Exception as e:
-                            print("Item error:", e)
-
-                except Exception as e:
-                    print("Page error:", e)
-
-        browser.close()
-
-    return items
+    return candidates[0] if candidates else ""
 
 
 # =====================
-# MAIN
+# EBAY SCRAPER
+# =====================
+
+def get_ebay_sold_comps(brand, title):
+
+    style = extract_style_name(title, brand)
+
+    if style:
+        query = f"{brand} {style} dress"
+    else:
+        query = f"{brand} dress"
+
+    search_url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(query)}&LH_Sold=1&LH_Complete=1"
+
+    print("Searching eBay:", query)
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    prices = []
+    matches = 0
+
+    try:
+        r = requests.get(search_url, headers=headers, timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        items = soup.select(".s-item")
+
+        for item in items[:30]:
+
+            try:
+                title_el = item.select_one(".s-item__title")
+                price_el = item.select_one(".s-item__price")
+
+                if not title_el or not price_el:
+                    continue
+
+                ebay_title = title_el.text.strip()
+                price_text = price_el.text
+
+                price_val = re.findall(r"\d+(?:\.\d+)?", price_text)
+                if not price_val:
+                    continue
+
+                price = float(price_val[0])
+
+                sim = similarity(title, ebay_title)
+
+                if sim < 0.4:
+                    continue
+
+                prices.append(price)
+                matches += 1
+
+            except:
+                continue
+
+    except Exception as e:
+        print("eBay error:", e)
+
+    if len(prices) >= 3:
+        median_price = round(statistics.median(prices), 2)
+
+        if matches >= 8:
+            confidence = "High"
+        elif matches >= 4:
+            confidence = "Medium"
+        else:
+            confidence = "Low"
+
+        return median_price, matches, confidence
+
+    return None, 0, "Low"
+
+
+# =====================
+# MAIN SCRAPER
 # =====================
 
 def main():
@@ -183,25 +181,42 @@ def main():
 
     run_id = datetime.now().strftime("%Y%m%d%H%M")
 
-    items = scrape_nordstrom_rack()
+    results = []
 
-    print("Total items found:", len(items))
+    for brand in DESIGNERS:
 
-    for item in items:
+        print(f"\nProcessing brand: {brand}")
 
-        row = [
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Nordstrom Rack",
-            item["brand"],
-            item["name"],
-            item["original"],
-            item["price"],
-            item["discount"],
-            item["image"],
-            item["link"],
-            run_id
+        # generic search seed
+        sample_titles = [
+            f"{brand} floral dress",
+            f"{brand} midi dress",
+            f"{brand} silk dress"
         ]
 
+        for title in sample_titles:
+
+            ebay_price, comps, confidence = get_ebay_sold_comps(brand, title)
+
+            row = [
+                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "eBay",
+                brand,
+                title,
+                "",
+                "",
+                "",
+                ebay_price if ebay_price else "",
+                comps,
+                confidence,
+                "",
+                f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(title)}&LH_Sold=1",
+                run_id
+            ]
+
+            results.append(row)
+
+    for row in results:
         sheet.append_row(row)
 
 
