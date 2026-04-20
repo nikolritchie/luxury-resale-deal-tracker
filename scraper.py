@@ -97,40 +97,38 @@ def extract_style_name(title, brand):
 
 def get_real_titles_from_ebay(brand):
 
-    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(brand + ' dress')}&LH_Sold=1&LH_Complete=1"
+    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(brand + ' dress')}&LH_Sold=1&LH_Complete=1&_ipg=50"
 
     headers = {
-        "User-Agent": "Mozilla/5.0"
+        "User-Agent": "Mozilla/5.0",
+        "Accept-Language": "en-US,en;q=0.9"
     }
 
     titles = []
 
     try:
         r = requests.get(url, headers=headers, timeout=20)
+
+        print("Response length:", len(r.text))
+
         soup = BeautifulSoup(r.text, "html.parser")
 
-        # Try multiple selectors (eBay changes often)
-        items = soup.select(".s-item__title") or soup.select("h3") or soup.select(".s-item")
+        # Look for links instead of title class
+        links = soup.select("a.s-item__link")
 
-        print(f"Raw items found: {len(items)}")
+        print("Links found:", len(links))
 
-        for item in items:
+        for link in links:
 
-            # handle different structures
-            if hasattr(item, "text"):
-                title = item.text.strip()
-            else:
-                continue
+            title = link.get_text(strip=True)
 
-            # skip junk rows
-            if (
-                "Shop on eBay" in title or
-                "New Listing" in title or
-                len(title) < 15
-            ):
+            if not title or len(title) < 15:
                 continue
 
             if brand.lower() not in title.lower():
+                continue
+
+            if "Shop on eBay" in title:
                 continue
 
             titles.append(title)
