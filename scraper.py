@@ -109,13 +109,25 @@ def get_real_titles_from_ebay(brand):
         r = requests.get(url, headers=headers, timeout=20)
         soup = BeautifulSoup(r.text, "html.parser")
 
-        items = soup.select(".s-item__title")
+        # Try multiple selectors (eBay changes often)
+        items = soup.select(".s-item__title") or soup.select("h3") or soup.select(".s-item")
+
+        print(f"Raw items found: {len(items)}")
 
         for item in items:
 
-            title = item.text.strip()
+            # handle different structures
+            if hasattr(item, "text"):
+                title = item.text.strip()
+            else:
+                continue
 
-            if "Shop on eBay" in title or len(title) < 10:
+            # skip junk rows
+            if (
+                "Shop on eBay" in title or
+                "New Listing" in title or
+                len(title) < 15
+            ):
                 continue
 
             if brand.lower() not in title.lower():
