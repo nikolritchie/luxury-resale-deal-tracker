@@ -62,7 +62,6 @@ def cleanup_old_rows(sheet):
     for row in reversed(rows_to_delete):
         sheet.delete_rows(row)
 
-
 # =====================
 # TEXT UTILS
 # =====================
@@ -92,10 +91,46 @@ def extract_style_name(title, brand):
 
     return candidates[0] if candidates else ""
 
+# =====================
+# EBAY FUNCTIONS
+# =====================
 
-# =====================
-# EBAY SCRAPER
-# =====================
+def get_real_titles_from_ebay(brand):
+
+    url = f"https://www.ebay.com/sch/i.html?_nkw={quote_plus(brand + ' dress')}&LH_Sold=1&LH_Complete=1"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    titles = []
+
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        items = soup.select(".s-item__title")
+
+        for item in items:
+
+            title = item.text.strip()
+
+            if "Shop on eBay" in title or len(title) < 10:
+                continue
+
+            if brand.lower() not in title.lower():
+                continue
+
+            titles.append(title)
+
+            if len(titles) >= 10:
+                break
+
+    except Exception as e:
+        print("Title fetch error:", e)
+
+    return titles
+
 
 def get_ebay_sold_comps(brand, title):
 
@@ -169,9 +204,8 @@ def get_ebay_sold_comps(brand, title):
 
     return None, 0, "Low"
 
-
 # =====================
-# MAIN SCRAPER
+# MAIN
 # =====================
 
 def main():
@@ -181,20 +215,15 @@ def main():
 
     run_id = datetime.now().strftime("%Y%m%d%H%M")
 
-    results = []
-
     for brand in DESIGNERS:
 
         print(f"\nProcessing brand: {brand}")
 
-        # generic search seed
-        sample_titles = [
-            f"{brand} floral dress",
-            f"{brand} midi dress",
-            f"{brand} silk dress"
-        ]
+        titles = get_real_titles_from_ebay(brand)
 
-        for title in sample_titles:
+        print(f"Found {len(titles)} real titles")
+
+        for title in titles:
 
             ebay_price, comps, confidence = get_ebay_sold_comps(brand, title)
 
@@ -214,10 +243,7 @@ def main():
                 run_id
             ]
 
-            results.append(row)
-
-    for row in results:
-        sheet.append_row(row)
+            sheet.append_row(row)
 
 
 if __name__ == "__main__":
