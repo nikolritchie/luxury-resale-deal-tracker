@@ -1,11 +1,14 @@
 import os
 import json
-import requests
-from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
+from bs4 import BeautifulSoup
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from playwright.sync_api import sync_playwright
+
+# =====================
+# CONFIG
+# =====================
 
 DESIGNERS = [
     "Zimmermann",
@@ -16,6 +19,10 @@ DESIGNERS = [
     "Ganni",
     "Cult Gaia"
 ]
+
+# =====================
+# GOOGLE SHEETS
+# =====================
 
 def connect_sheet():
     creds_json = os.environ['GOOGLE_SHEETS_CREDENTIALS']
@@ -45,7 +52,7 @@ def cleanup_old_rows(sheet):
         try:
             timestamp = datetime.strptime(row["Timestamp"], "%Y-%m-%d %H:%M:%S")
             if timestamp < cutoff:
-                rows_to_delete.append(i+2)
+                rows_to_delete.append(i + 2)
         except:
             pass
 
@@ -53,14 +60,27 @@ def cleanup_old_rows(sheet):
         sheet.delete_rows(row)
 
 
+# =====================
+# SCRAPER (PLAYWRIGHT)
+# =====================
+
 def scrape_nordstrom_rack():
 
     items = []
 
     with sync_playwright() as p:
 
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"]
+        )
+
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            viewport={"width": 1280, "height": 800}
+        )
+
+        page = context.new_page()
 
         urls = [
             "https://www.nordstromrack.com/c/women/clothing",
@@ -73,24 +93,20 @@ def scrape_nordstrom_rack():
             for page_num in range(1, 10):
 
                 url = f"{base_url}?page={page_num}"
-
                 print("Visiting:", url)
 
                 try:
-
-                    # THIS LINE WAS MISSING
                     page.goto(url, timeout=60000)
 
-                    page.wait_for_timeout(4000)
+                    # let JS load
+                    page.wait_for_timeout(5000)
 
-                    page.mouse.wheel(0, 5000)
+                    # scroll to trigger lazy loading
+                    page.mouse.wheel(0, 6000)
 
                     page.wait_for_timeout(3000)
 
-                    page.wait_for_selector("img", timeout=10000)
-
                     html = page.content()
-
                     soup = BeautifulSoup(html, "html.parser")
 
                     products = soup.select('[data-testid="product-card"]')
@@ -100,44 +116,49 @@ def scrape_nordstrom_rack():
                     for product in products:
 
                         try:
-
-                            brand = product.select_one('[data-testid="product-brand"]')
-
-                            if not brand:
+                            brand_el = product.select_one('[data-testid="product-brand"]')
+                            if not brand_el:
                                 continue
 
-                            brand = brand.text.strip()
+                            brand = brand_el.text.strip()
 
                             if not any(d.lower() in brand.lower() for d in DESIGNERS):
                                 continue
 
-                            name = product.select_one('[data-testid="product-title"]').text.strip()
+                            name_el = product.select_one('[data-testid="product-title"]')
+                            price_el = product.select_one('[data-testid="product-price"]')
+                            compare_el = product.select_one('[data-testid="product-compare-at-price"]')
 
-                            price = product.select_one('[data-testid="product-price"]')
-                            compare = product.select_one('[data-testid="product-compare-at-price"]')
-
-                            if not price or not compare:
+                            if not name_el or not price_el or not compare_el:
                                 continue
 
-                            price = float(price.text.replace("$","").replace(",",""))
-                            original = float(compare.text.replace("$","").replace(",",""))
+                            name = name_el.text.strip()
+
+                            price = float(price_el.text.replace("$", "").replace(",", ""))
+                            original = float(compare_el.text.replace("$", "").replace(",", ""))
 
                             discount = (original - price) / original
 
                             if discount < 0.70:
                                 continue
 
-                            image = product.select_one("img")["src"]
-                            link = product.select_one("a")["href"]
+                            image_el = product.select_one("img")
+                            link_el = product.select_one("a")
+
+                            if not image_el or not link_el:
+                                continue
+
+                            image = image_el.get("src", "")
+                            link = "https://www.nordstromrack.com" + link_el.get("href", "")
 
                             items.append({
                                 "brand": brand,
                                 "name": name,
                                 "price": price,
                                 "original": original,
-                                "discount": f"{round(discount*100)}%",
+                                "discount": f"{round(discount * 100)}%",
                                 "image": image,
-                                "link": "https://www.nordstromrack.com" + link
+                                "link": link
                             })
 
                         except Exception as e:
@@ -150,6 +171,11 @@ def scrape_nordstrom_rack():
 
     return items
 
+
+# =====================
+# MAIN
+# =====================
+
 def main():
 
     sheet = connect_sheet()
@@ -159,11 +185,13 @@ def main():
 
     items = scrape_nordstrom_rack()
 
+    print("Total items found:", len(items))
+
     for item in items:
 
         row = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "Saks",
+            "Nordstrom Rack",
             item["brand"],
             item["name"],
             item["original"],
