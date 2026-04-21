@@ -1,3 +1,8 @@
+"""
+This project is transitioning from exploratory data collection methods
+to structured product feeds and affiliate integrations for scalability.
+"""
+
 import os
 import json
 import re
